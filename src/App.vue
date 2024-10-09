@@ -187,6 +187,15 @@ export default {
         shortName: tempCoins.Data[coin].Symbol,
       });
     }
+
+    const tickersData = localStorage.getItem("cryptonomicon-list");
+
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      for (const ticker of this.tickers) {
+        this.subscribeToUpdates(ticker.name);
+      }
+    }
   },
 
   data() {
@@ -202,6 +211,22 @@ export default {
   },
 
   methods: {
+    subscribeToUpdates(tickerName) {
+      const inter = setInterval(async () => {
+        const f = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=d89918fb0e7ae0d5cc575a4cfd4b8078c414a121c0d0471bafa57027b12199d8`
+        );
+        const data = await f.json();
+        this.tickers.find((t) => t.name === tickerName).value =
+          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+        if (this.sel?.name === tickerName) {
+          this.graph.push(data.USD);
+        }
+        this.normalizeGraph();
+      }, 5000);
+      this.tickers.find((t) => t.name === tickerName).interval = inter;
+    },
+
     add(tickerToAdd) {
       const currentTicker = { name: tickerToAdd.toUpperCase(), value: "-" };
       if (this.tickers.find((t) => t.name === currentTicker.name)) {
@@ -210,20 +235,9 @@ export default {
       }
       this.hints = [];
       this.tickers.push(currentTicker);
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
+      this.subscribeToUpdates(currentTicker.name);
       this.ticker = "";
-      const inter = setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=d89918fb0e7ae0d5cc575a4cfd4b8078c414a121c0d0471bafa57027b12199d8`
-        );
-        const data = await f.json();
-        this.tickers.find((t) => t.name === currentTicker.name).value =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-        if (this.sel?.name === currentTicker.name) {
-          this.graph.push(data.USD);
-        }
-        this.normalizeGraph();
-      }, 5000);
-      this.tickers.find((t) => t.name === currentTicker.name).interval = inter;
     },
 
     remove(tickerToRemove) {
