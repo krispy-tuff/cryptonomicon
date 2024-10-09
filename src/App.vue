@@ -120,7 +120,7 @@
         <button
           v-if="hasNextPage"
           :class="{
-            'mx-3': page === 1,
+            'mx-3': page !== 1,
           }"
           @click="page++"
           type="button"
@@ -223,13 +223,6 @@ export default {
   name: "App",
 
   async created() {
-    const urlData = Object.fromEntries(
-      new URL(window.location).searchParams.entries()
-    );
-
-    if (urlData.filter) this.filter = urlData.filter;
-    if (urlData.page) this.page = urlData.page;
-
     const c = await fetch(
       `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
     );
@@ -260,8 +253,8 @@ export default {
       coins: [],
       hints: [],
       reoccurrence: false,
-      filter: "",
-      page: 1,
+      filter: this.getParamsFromURL().filter,
+      page: this.getParamsFromURL().page,
       hasNextPage: false,
     };
   },
@@ -283,6 +276,13 @@ export default {
       this.tickers.find((t) => t.name === tickerName).interval = inter;
     },
 
+    getParamsFromURL() {
+      const urlData = Object.fromEntries(
+        new URL(window.location).searchParams.entries()
+      );
+      return { filter: urlData?.filter ?? "", page: urlData?.page ?? 1 };
+    },
+
     filteredTickers() {
       const filteredFull = this.tickers.filter((t) =>
         t.name.includes(this.filter)
@@ -290,11 +290,7 @@ export default {
       this.hasNextPage = filteredFull.length > this.page * 6;
       const pageFirst = (this.page - 1) * 6;
       const pageLast = this.page * 6;
-      const filteredSliced = filteredFull.slice(pageFirst, pageLast);
-      if (!filteredSliced.find((t) => t === this.sel)) {
-        this.sel = null;
-      }
-      return filteredSliced;
+      return filteredFull.slice(pageFirst, pageLast);
     },
 
     add(tickerName) {
@@ -322,7 +318,7 @@ export default {
       if (this.sel === tickerToRemove) {
         this.sel = null;
       }
-      if (this.filteredTickers().length === 0 && this.page !== 1) {
+      if (this.filteredTickers().length === 0 && this.page > 1) {
         this.page--;
       }
     },
@@ -376,9 +372,6 @@ export default {
   watch: {
     filter() {
       this.filter = this.filter.toUpperCase();
-      if (!this.filteredTickers().find((t) => t === this.sel)) {
-        this.sel = null;
-      }
       this.page = 1;
       this.saveURL();
     },
