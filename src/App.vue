@@ -83,11 +83,57 @@
           Добавить
         </button>
       </section>
-      <template v-if="tickers.length">
+      <section v-if="tickers.length">
+        <hr class="w-full border-t border-gray-600 my-4" />
+        <div class="flex">
+          <div class="max-w-xs">
+            <label for="wallet" class="block text-sm font-medium text-gray-700"
+              >Фильтр
+            </label>
+            <div class="mt-1 relative rounded-md shadow-md">
+              <input
+                v-model="filter"
+                type="text"
+                name="wallet"
+                id="wallet"
+                class="block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
+              />
+              <button
+                v-if="filter"
+                @click="filter = ''"
+                type="button"
+                class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Очистить
+              </button>
+            </div>
+          </div>
+        </div>
+        <button
+          v-if="page > 1"
+          @click="page--"
+          type="button"
+          class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Назад
+        </button>
+        <button
+          v-if="hasNextPage"
+          :class="{
+            'mx-3': page === 1,
+          }"
+          @click="page++"
+          type="button"
+          class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+        >
+          Вперед
+        </button>
+      </section>
+      <template v-if="filteredTickers().length">
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in tickers"
+            v-for="t in filteredTickers()"
             :key="t.name"
             @click="selectTicker(t)"
             :class="{
@@ -124,9 +170,9 @@
             </button>
           </div>
         </dl>
-        <hr class="w-full border-t border-gray-600 my-4" />
       </template>
       <section v-if="sel" class="relative">
+        <hr class="w-full border-t border-gray-600 my-4" />
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
           {{ sel.name }} - USD
         </h3>
@@ -177,6 +223,13 @@ export default {
   name: "App",
 
   async created() {
+    const urlData = Object.fromEntries(
+      new URL(window.location).searchParams.entries()
+    );
+
+    if (urlData.filter) this.filter = urlData.filter;
+    if (urlData.page) this.page = urlData.page;
+
     const c = await fetch(
       `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
     );
@@ -207,6 +260,9 @@ export default {
       coins: [],
       hints: [],
       reoccurrence: false,
+      filter: "",
+      page: 1,
+      hasNextPage: false,
     };
   },
 
@@ -227,8 +283,22 @@ export default {
       this.tickers.find((t) => t.name === tickerName).interval = inter;
     },
 
-    add(tickerToAdd) {
-      const currentTicker = { name: tickerToAdd.toUpperCase(), value: "-" };
+    filteredTickers() {
+      const filteredFull = this.tickers.filter((t) =>
+        t.name.includes(this.filter)
+      );
+      this.hasNextPage = filteredFull.length > this.page * 6;
+      const pageFirst = (this.page - 1) * 6;
+      const pageLast = this.page * 6;
+      const filteredSliced = filteredFull.slice(pageFirst, pageLast);
+      if (!filteredSliced.find((t) => t === this.sel)) {
+        this.sel = null;
+      }
+      return filteredSliced;
+    },
+
+    add(tickerName) {
+      const currentTicker = { name: tickerName.toUpperCase(), value: "-" };
       if (this.tickers.find((t) => t.name === currentTicker.name)) {
         this.reoccurrence = true;
         return;
@@ -238,6 +308,9 @@ export default {
       localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       this.subscribeToUpdates(currentTicker.name);
       this.ticker = "";
+      if (!this.filteredTickers().find((t) => t.name === tickerName)) {
+        this.filter = "";
+      }
     },
 
     remove(tickerToRemove) {
@@ -245,8 +318,12 @@ export default {
         this.tickers.find((t) => t.name === tickerToRemove.name).interval
       );
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
+      localStorage.setItem("cryptonomicon-list", JSON.stringify(this.tickers));
       if (this.sel === tickerToRemove) {
         this.sel = null;
+      }
+      if (this.filteredTickers().length === 0 && this.page !== 1) {
+        this.page--;
       }
     },
 
@@ -285,6 +362,29 @@ export default {
     selectTicker(tickerToSelect) {
       this.sel = tickerToSelect;
       this.graph = [];
+    },
+
+    saveURL() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      );
+    },
+  },
+
+  watch: {
+    filter() {
+      this.filter = this.filter.toUpperCase();
+      if (!this.filteredTickers().find((t) => t === this.sel)) {
+        this.sel = null;
+      }
+      this.page = 1;
+      this.saveURL();
+    },
+
+    page() {
+      this.saveURL();
     },
   },
 };
