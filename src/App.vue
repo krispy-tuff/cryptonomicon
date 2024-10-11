@@ -145,7 +145,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.value }}
+                {{ formatPrice(t.value) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -218,6 +218,8 @@
 </template>
 
 <script>
+import { subscribeTicker, unsubscribeTicker } from "./exchange";
+
 export default {
   name: "App",
 
@@ -233,13 +235,16 @@ export default {
       });
     }
 
+    //localStorage.setItem("cryptonomicon-list", JSON.stringify([]));
     const tickersData = localStorage.getItem("cryptonomicon-list");
 
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
-      for (const ticker of this.tickers) {
-        this.subscribeToUpdates(ticker.name);
-      }
+      this.tickers.forEach((t) => {
+        subscribeTicker(t.name, (newPrice) =>
+          this.updateTicker(t.name, newPrice)
+        );
+      });
     }
   },
 
@@ -325,19 +330,17 @@ export default {
       return { filter: urlData?.filter ?? "", page: urlData?.page ?? 1 };
     },
 
-    subscribeToUpdates(tickerName) {
-      const inter = setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=d89918fb0e7ae0d5cc575a4cfd4b8078c414a121c0d0471bafa57027b12199d8`
-        );
-        const data = await f.json();
-        this.tickers.find((t) => t.name === tickerName).value =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 5000);
-      this.tickers.find((t) => t.name === tickerName).interval = inter;
+    updateTicker(tickerName, newPrice) {
+      const price = newPrice ? newPrice : "-";
+      this.tickers.find((t) => t.name === tickerName).value = price;
+      if (this.selectedTicker?.name === tickerName) {
+        price === "-" ? this.graph.push(0) : this.graph.push(price);
+      }
+    },
+
+    formatPrice(price) {
+      if (price === "-") return price;
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
     },
 
     addTicker(tickerName) {
@@ -347,7 +350,9 @@ export default {
         return;
       }
       this.tickers = [...this.tickers, currentTicker];
-      this.subscribeToUpdates(currentTicker.name);
+      subscribeTicker(currentTicker.name, (newPrice) =>
+        this.updateTicker(currentTicker.name, newPrice)
+      );
       this.ticker = "";
       if (!this.filteredTickers.find((t) => t.name === currentTicker.name)) {
         this.filter = "";
@@ -355,8 +360,10 @@ export default {
     },
 
     removeTicker(tickerToRemove) {
-      clearInterval(this.tickers.find((t) => t === tickerToRemove).interval);
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
+      unsubscribeTicker(tickerToRemove.name, (newPrice) =>
+        this.updateTicker(tickerToRemove.name, newPrice)
+      );
       if (this.selectedTicker === tickerToRemove) {
         this.selectedTicker = null;
       }
@@ -367,7 +374,11 @@ export default {
     },
 
     selectTicker(tickerToSelect) {
-      this.selectedTicker = tickerToSelect;
+      if (this.selectedTicker === tickerToSelect) {
+        this.selectedTicker = null;
+      } else {
+        this.selectedTicker = tickerToSelect;
+      }
     },
   },
 
