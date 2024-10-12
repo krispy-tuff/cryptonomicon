@@ -235,7 +235,7 @@ export default {
       });
     }
 
-    //localStorage.setItem("cryptonomicon-list", JSON.stringify([]));
+    //localStorage.removeItem("cryptonomicon-list");
     const tickersData = localStorage.getItem("cryptonomicon-list");
 
     if (tickersData) {
