@@ -137,8 +137,10 @@
             @click="selectTicker(t)"
             :class="{
               'border-4': t === selectedTicker,
+              'bg-red-100': t.value === null,
+              'bg-white': t.value,
             }"
-            class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
+            class="overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
             <div class="px-4 py-5 sm:p-6 text-center">
               <dt class="text-sm font-medium text-gray-500 truncate">
@@ -170,12 +172,18 @@
           </div>
         </dl>
       </template>
-      <section v-if="selectedTicker" class="relative">
+      <section
+        v-if="selectedTicker && selectedTicker.value !== null"
+        class="relative"
+      >
         <hr class="w-full border-t border-gray-600 my-4" />
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
           {{ selectedTicker.name }} - USD
         </h3>
-        <div class="flex items-end border-gray-600 border-b border-l h-64">
+        <div
+          class="flex items-end border-gray-600 border-b border-l h-64"
+          ref="graph"
+        >
           <div
             v-for="(rect, idx) in normalizedGraph"
             :key="idx"
@@ -183,6 +191,7 @@
               height: `${rect}%`,
             }"
             class="bg-purple-800 border w-10"
+            ref="graphBar"
           ></div>
         </div>
         <button
@@ -248,6 +257,20 @@ export default {
     }
   },
 
+  mounted() {
+    window.addEventListener("resize", this.sliceGraph);
+
+    const watchBarWidth = this.$watch("graph", () => {
+      const barWidthTemp = Math.round(
+        this.$refs.graphBar?.length ? this.$refs.graphBar[0].clientWidth : null
+      );
+      if (barWidthTemp > this.barWidth) {
+        this.barWidth = barWidthTemp;
+        watchBarWidth();
+      }
+    });
+  },
+
   data() {
     return {
       ticker: "",
@@ -257,6 +280,8 @@ export default {
       selectedTicker: null,
 
       graph: [],
+      barWidth: 0,
+
       coins: [],
       page: this.getParamsFromURL().page,
 
@@ -331,16 +356,30 @@ export default {
     },
 
     updateTicker(tickerName, newPrice) {
+      if (newPrice === null) {
+        this.tickers.find((t) => t.name === tickerName).value = newPrice;
+        return;
+      }
       const price = newPrice ? newPrice : "-";
       this.tickers.find((t) => t.name === tickerName).value = price;
       if (this.selectedTicker?.name === tickerName) {
-        price === "-" ? this.graph.push(0) : this.graph.push(price);
+        const newPrice = price === "-" ? 0 : price;
+        this.graph = [...this.graph, newPrice];
+        this.sliceGraph();
       }
     },
 
     formatPrice(price) {
-      if (price === "-") return price;
+      if (price === "-" || price === null) return "-";
       return price > 1 ? price.toFixed(2) : price.toPrecision(2);
+    },
+
+    sliceGraph() {
+      const barMax = Math.floor(this.$refs.graph?.clientWidth / this.barWidth);
+      if (barMax)
+        if (this.graph.length > barMax) {
+          this.graph = this.graph.slice(-barMax);
+        }
     },
 
     addTicker(tickerName) {

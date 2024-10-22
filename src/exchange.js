@@ -6,19 +6,21 @@ const WS_URL = "wss://streamer.cryptocompare.com/v2";
 const MSG_SUB = "5";
 const MSG_ACCEPT = "20";
 const MSG_REJECT = "429";
+const MSG_NOPAIR = "500";
 
 let socket = new WebSocket(`${WS_URL}?api_key=${API_KEY}`);
 const tickerHandlers = new Map();
 
 const channel = new BroadcastChannel("cryptonomicon");
-let channelTickers = [];
+let channelTickers = new Map();
 
 let hasSocket = true;
+let btcRate;
 
-function subscribeTickerToWS(ticker) {
+function subscribeTickerToWS(ticker, tsym = "USD") {
   const message = JSON.stringify({
     action: "SubAdd",
-    subs: [`5~CCCAGG~${ticker}~USD`],
+    subs: [`5~CCCAGG~${ticker}~${tsym}`],
   });
 
   if (socket.readyState === WebSocket.OPEN) {
@@ -35,10 +37,10 @@ function subscribeTickerToWS(ticker) {
   );
 }
 
-function unsubscribeTickerFromWS(ticker) {
+function unsubscribeTickerFromWS(ticker, tsym = "USD") {
   const message = JSON.stringify({
     action: "SubRemove",
-    subs: [`5~CCCAGG~${ticker}~USD`],
+    subs: [`5~CCCAGG~${ticker}~${tsym}`],
   });
   socket.send(message);
 }
@@ -50,6 +52,7 @@ export const subscribeTicker = (tickerName, cb) => {
     subscribeTickerToWS(tickerName);
   } else {
     channel.postMessage({ ticker: tickerName, action: "subscribe" });
+    console.log("Hey!");
   }
 };
 
@@ -63,14 +66,24 @@ export const unsubscribeTicker = (tickerName) => {
 };
 
 socket.addEventListener("message", (e) => {
-  const { TYPE: type, FROMSYMBOL: currency, PRICE: price } = JSON.parse(e.data);
+  const {
+    TYPE: type,
+    FROMSYMBOL: currency,
+    TOSYMBOL: tsym,
+    PRICE: price,
+    PARAMETER: param,
+    MESSAGE: message,
+  } = JSON.parse(e.data);
   switch (type) {
     case MSG_SUB: {
-      if (channelTickers.find((t) => t === currency)) {
-        channel.postMessage({ ticker: currency, price: price });
+      if (tsym === "USD") {
+        if (currency === "BTC") {
+          btcRate = price;
+        }
+        handleUpdate(currency, price);
+      } else if (tsym === "BTC") {
+        handleUpdate(currency, price * btcRate);
       }
-      const handlers = tickerHandlers.get(currency) ?? [];
-      handlers.forEach((cb) => cb(price));
       break;
     }
     case MSG_ACCEPT:
@@ -86,25 +99,61 @@ socket.addEventListener("message", (e) => {
         channel.postMessage({ ticker: ticker, action: "subscribe" });
       }
       break;
+    case MSG_NOPAIR: {
+      if (message === "INVALID_SUB") {
+        const btcEntries = channelTickers.get("BTC") ?? 0;
+        const curr = param?.slice(9, -4);
+        console.log("here: " + curr);
+        if (param?.slice(-3) === "USD") {
+          if (btcEntries === 0 && !tickerHandlers.has("BTC")) {
+            subscribeTickerToWS("BTC");
+          }
+          channelTickers.set("BTC", btcEntries + 1);
+          subscribeTickerToWS(curr, "BTC");
+        } else if (param?.slice(-3) === "BTC") {
+          handleUpdate(curr, null);
+          if (btcEntries > 1) {
+            channelTickers.set("BTC", btcEntries - 1);
+          } else {
+            if (!tickerHandlers.has("BTC")) unsubscribeTickerFromWS("BTC");
+            channelTickers.delete("BTC");
+          }
+        }
+      }
+      break;
+    }
   }
 });
 
+function handleUpdate(currency, price) {
+  if (channelTickers.has(currency)) {
+    channel.postMessage({ ticker: currency, price: price });
+  }
+  const handlers = tickerHandlers.get(currency) ?? [];
+  handlers.forEach((cb) => cb(price));
+}
+
 channel.onmessage = (e) => {
   const { ticker: ticker, action: action, price: price } = e.data;
+  const instances = channelTickers.get(ticker) ?? 0;
   switch (action) {
     case "subscribe":
-      if (!channelTickers.includes(ticker)) channelTickers.push(ticker);
-      subscribeTickerToWS(ticker);
+      if (instances === 0 && !tickerHandlers.has(ticker))
+        subscribeTickerToWS(ticker);
+      channelTickers.set(ticker, instances + 1);
       break;
     case "unsubscribe":
-      channelTickers = channelTickers.filter((t) => t !== ticker);
-      if (!tickerHandlers.has(ticker)) {
-        unsubscribeTickerFromWS(ticker);
+      if (instances > 1) {
+        channelTickers.set(ticker, instances - 1);
+      } else {
+        channelTickers.delete(ticker);
+        if (!tickerHandlers.has(ticker)) {
+          unsubscribeTickerFromWS(ticker);
+        }
       }
       break;
     case "closed":
       if (!hasSocket) {
-        console.log(socket.readyState);
         setTimeout(() => {
           window.location.reload();
         }, Math.floor(Math.random() * 1000));
@@ -119,6 +168,12 @@ channel.onmessage = (e) => {
 };
 
 window.addEventListener("beforeunload", () => {
-  channel.postMessage({ action: "closed" });
-  socket.close();
+  if (hasSocket) {
+    channel.postMessage({ action: "closed" });
+    socket.close();
+  } else {
+    for (const ticker in tickerHandlers.keys()) {
+      channel.postMessage({ ticker: ticker, action: "unsubscribe" });
+    }
+  }
 });
