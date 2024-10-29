@@ -48,6 +48,10 @@
 export default {
   name: "TickerGraph",
 
+  emits: {
+    closeGraph: null,
+  },
+
   props: {
     tickerName: {
       type: String,

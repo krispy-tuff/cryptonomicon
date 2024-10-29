@@ -34,7 +34,7 @@
         </div>
       </div>
     </div>
-    <add-ticker-button @click="addTicker(ticker)" />
+    <add-ticker-button @click="addTicker(ticker)" :disabled="!canAdd" />
   </section>
 </template>
 
@@ -46,6 +46,12 @@ export default {
 
   components: {
     AddTickerButton: AddTickerButton,
+  },
+
+  emits: {
+    coinsLoaded: null,
+    addTicker: (ticker) => ticker !== "",
+    tickerChange: null,
   },
 
   props: {
@@ -95,6 +101,10 @@ export default {
         }
       }
       return hints;
+    },
+
+    canAdd() {
+      return this.ticker !== "";
     },
   },
 

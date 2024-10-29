@@ -1,5 +1,5 @@
 <template>
-  <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
+  <div class="container mx-auto flex flex-col bg-gray-100 p-4">
     <div
       v-if="!coinsLoaded"
       class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center"
@@ -225,7 +225,6 @@ export default {
       const currentTicker = { name: tickerName.toUpperCase(), value: "-" };
       if (this.tickers.find((t) => t.name === currentTicker.name)) {
         this.reoccurence = true;
-        console.log("parent " + this.reoccurence);
         return;
       }
       this.tickers = [...this.tickers, currentTicker];
